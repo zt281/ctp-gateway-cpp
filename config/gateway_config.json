@@ -1,0 +1,21 @@
+{
+    "engine": {
+        "host": "127.0.0.1",
+        "port": 5555
+    },
+    "gateway": {
+        "md_front": "tcp://trading.openctp.cn:30011",
+        "td_front": "tcp://trading.openctp.cn:30001",
+        "broker_id": "",
+        "user_id": "test",
+        "password": "test",
+        "underlyings": {
+            "SHFE": ["ag", "au", "cu"],
+            "INE": ["sc"],
+            "CZCE": ["TA", "MA", "FG"],
+            "DCE": ["i"]
+        },
+        "subscribe_options": true,
+        "resolve_timeout": 10.0
+    }
+}

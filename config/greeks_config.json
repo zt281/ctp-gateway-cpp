@@ -1,0 +1,15 @@
+{
+    "engine": {
+        "host": "127.0.0.1",
+        "port": 5555
+    },
+    "greeks": {
+        "risk_free_rate": 0.02,
+        "underlyings": {
+            "SHFE": ["ag", "au", "cu"],
+            "INE": ["sc"],
+            "CZCE": ["TA", "MA", "FG"],
+            "DCE": ["i"]
+        }
+    }
+}
