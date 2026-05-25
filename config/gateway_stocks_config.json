@@ -1,0 +1,18 @@
+{
+    "engine": {
+        "host": "127.0.0.1",
+        "port": 5555
+    },
+    "gateway": {
+        "gateway_type": "stocks",
+        "md_front": "tcp://121.37.80.177:20004",
+        "td_front": "tcp://121.37.80.177:20002",
+        "broker_id": "",
+        "user_id": "test",
+        "password": "test",
+        "underlyings": {
+            "SSE": ["510050", "510300", "510500"],
+            "SZSE": ["159915", "159919"]
+        }
+    }
+}

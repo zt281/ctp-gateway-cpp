@@ -4,18 +4,17 @@
         "port": 5555
     },
     "gateway": {
+        "gateway_type": "futures",
         "md_front": "tcp://trading.openctp.cn:30011",
         "td_front": "tcp://trading.openctp.cn:30001",
-        "broker_id": "",
-        "user_id": "test",
-        "password": "test",
+        "broker_id": "9999",
+        "user_id": "18787",
+        "password": "123456",
         "underlyings": {
             "SHFE": ["ag", "au", "cu"],
             "INE": ["sc"],
             "CZCE": ["TA", "MA", "FG"],
             "DCE": ["i"]
-        },
-        "subscribe_options": true,
-        "resolve_timeout": 10.0
+        }
     }
 }
