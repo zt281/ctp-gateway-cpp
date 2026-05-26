@@ -1,0 +1,23 @@
+{
+    "engine": {
+        "host": "127.0.0.1",
+        "port": 5555
+    },
+    "gateway": {
+        "gateway_type": "stocks",
+        "dll_dir": "../src/modules/openctp_gateway/dlls/tts-stock",
+        "md_dll": "",
+        "td_dll": "",
+        "md_front": "tcp://122.51.136.165:20044",
+        "td_front": "tcp://122.51.136.165:20042",
+        "broker_id": "9999",
+        "user_id": "YOUR_USER_ID",
+        "password": "YOUR_PASSWORD",
+        "appid": "",
+        "authcode": "",
+        "underlyings": {
+            "SSE":  ["510050", "510300", "510500"],
+            "SZSE": ["159915", "159919", "159922"]
+        }
+    }
+}
