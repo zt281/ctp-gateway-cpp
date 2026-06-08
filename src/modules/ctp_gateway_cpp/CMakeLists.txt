@@ -1,15 +1,3 @@
-cmake_minimum_required(VERSION 3.16)
-project(ctp_gateway_cpp CXX)
-
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-# MSVC: UTF-8 编译选项，避免 C4819 警告
-if(MSVC)
-    add_compile_options(/utf-8)
-endif()
-
 # msgpack-c: 不依赖 Boost
 add_definitions(-DMSGPACK_NO_BOOST)
 
@@ -26,20 +14,36 @@ if(NOT TARGET tyche_module)
                      "${CMAKE_BINARY_DIR}/tyche_core")
 endif()
 
-# ── nlohmann/json（FetchContent，GIT 方式）────────────────────
-include(FetchContent)
-FetchContent_Declare(nlohmann_json
-    GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG        v3.11.3
-    GIT_SHALLOW    TRUE
-)
-FetchContent_MakeAvailable(nlohmann_json)
+# ── nlohmann/json（header-only，本地单文件）───────────────────
+# 避免网络依赖，使用 third_party 目录下的 json.hpp 单文件
+set(NLOHMANN_JSON_HEADER "${THIRD_PARTY_DIR}/nlohmann_json.hpp")
+if(NOT EXISTS ${NLOHMANN_JSON_HEADER})
+    message(FATAL_ERROR
+        "nlohmann/json header not found: ${NLOHMANN_JSON_HEADER}\n"
+        "Please download json.hpp from:\n"
+        "  https://github.com/nlohmann/json/releases/download/v3.11.3/json.hpp\n"
+        "  and place it at: ${THIRD_PARTY_DIR}/nlohmann_json.hpp")
+endif()
 
-# ── CTP SDK 头文件目录 ──────────────────────────────────────
+# ── CTP SDK 头文件目录检测 ────────────────────────────────────
 # 默认指向本模块的 include/ctp 占位目录；
 # 用户可通过 -DCTP_SDK_DIR=<path> 覆盖指向实际 SDK 头文件目录。
 if(NOT DEFINED CTP_SDK_DIR)
     set(CTP_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include/ctp")
+endif()
+
+# 检查 CTP SDK 头文件是否存在（至少检查关键头文件）
+set(CTP_HEADER_MD "${CTP_SDK_DIR}/ThostFtdcMdApi.h")
+set(CTP_HEADER_TD "${CTP_SDK_DIR}/ThostFtdcTraderApi.h")
+
+if(NOT EXISTS "${CTP_HEADER_MD}" OR NOT EXISTS "${CTP_HEADER_TD}")
+    message(WARNING
+        "CTP SDK headers not found in: ${CTP_SDK_DIR}\n"
+        "  Missing: ThostFtdcMdApi.h / ThostFtdcTraderApi.h\n"
+        "  Please copy CTP headers to src/modules/ctp_gateway_cpp/include/ctp/\n"
+        "  Or specify via: -DCTP_SDK_DIR=<path_to_ctp_include>")
+else()
+    message(STATUS "CTP SDK headers found: ${CTP_SDK_DIR}")
 endif()
 
 # ── 可执行目标 ─────────────────────────────────────────────
@@ -55,12 +59,12 @@ add_executable(ctp_gateway_cpp
 target_include_directories(ctp_gateway_cpp PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"   # 本模块内部头文件
     "${TYCHE_ROOT}/src"                  # #include "tyche/cpp/types.h"
+    "${TYCHE_ROOT}/third_party"          # #include "nlohmann_json.hpp"
     "${CTP_SDK_DIR}"                     # CTP SDK 头文件
 )
 
 target_link_libraries(ctp_gateway_cpp PRIVATE
     tyche_module
-    nlohmann_json::nlohmann_json
 )
 
 # Windows / Linux 平台附加链接

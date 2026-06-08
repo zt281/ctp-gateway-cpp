@@ -6,10 +6,8 @@
     "greeks": {
         "risk_free_rate": 0.02,
         "underlyings": {
-            "SHFE": ["ag", "au", "cu"],
-            "INE": ["sc"],
-            "CZCE": ["TA", "MA", "FG"],
-            "DCE": ["i"]
-        }
+            "SHFE": ["ag"]
+        },
+        "resolve_timeout": 10.0
     }
 }

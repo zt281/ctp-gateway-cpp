@@ -12,25 +12,23 @@
 #  include <windows.h>
 #endif
 
-// ── 全局关闭标志与网关指针 ────────────────────────────────────
+// ── 全局关闭标志 ──────────────────────────────────────────────
 static std::atomic<bool> g_shutdown{false};
-static CtpGateway*       g_gateway = nullptr;
 
 // ── 信号/控制台事件处理 ───────────────────────────────────────
+// 注意：信号处理函数中应仅使用 async-signal-safe 操作。
+// 这里仅设置原子标志，stop() 由主线程在检测到 g_shutdown 后调用。
 #ifdef _WIN32
 BOOL WINAPI ctrl_handler(DWORD type) {
     if (type == CTRL_C_EVENT || type == CTRL_CLOSE_EVENT) {
-        std::cout << "\n[CtpGateway] Shutdown signal received\n";
-        g_shutdown.store(true);
-        if (g_gateway) g_gateway->stop();
+        g_shutdown.store(true, std::memory_order_seq_cst);
         return TRUE;
     }
     return FALSE;
 }
 #else
 static void signal_handler(int /*sig*/) {
-    g_shutdown.store(true);
-    if (g_gateway) g_gateway->stop();
+    g_shutdown.store(true, std::memory_order_seq_cst);
 }
 #endif
 
@@ -91,12 +89,15 @@ int main(int argc, char* argv[]) {
                   << "  family  = " << cfg.family_name << "\n";
 
         CtpGateway gateway(cfg);
-        g_gateway = &gateway;
 
         // run() 阻塞直到 stop() 被调用
         gateway.run();
 
-        g_gateway = nullptr;
+        // 若信号处理器设置了关闭标志，从正常线程上下文调用 stop()
+        if (g_shutdown.load(std::memory_order_seq_cst)) {
+            gateway.stop();
+        }
+
         std::cout << "[CtpGateway] Stopped cleanly\n";
 
     } catch (const std::exception& ex) {

@@ -58,8 +58,9 @@ private:
     const GatewayConfig&     cfg_;
     CThostFtdcMdApi*         md_api_;
     QuoteCallback             on_quote_cb_;
-    std::vector<std::string>  instruments_;
-    std::mutex                inst_mtx_;
-    std::atomic<bool>         logged_in_{false};
-    std::atomic<int>          req_id_{0};
+    std::vector<std::string>              instruments_;
+    std::vector<std::vector<char>>        instrument_buffers_;
+    std::mutex                            inst_mtx_;
+    std::atomic<bool>                     logged_in_{false};
+    std::atomic<int>                      req_id_{0};
 };
