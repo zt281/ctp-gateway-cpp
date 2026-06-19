@@ -1,11 +1,13 @@
 #include "ctp_gateway.h"
 #include "config.h"
 #include <atomic>
+#include <chrono>
 #include <csignal>
 #include <cstring>
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 
 #ifdef _WIN32
 #  define WIN32_LEAN_AND_MEAN
@@ -90,13 +92,16 @@ int main(int argc, char* argv[]) {
 
         CtpGateway gateway(cfg);
 
-        // run() 阻塞直到 stop() 被调用
-        gateway.run();
+        // 启动模块（非阻塞）
+        gateway.start();
 
-        // 若信号处理器设置了关闭标志，从正常线程上下文调用 stop()
-        if (g_shutdown.load(std::memory_order_seq_cst)) {
-            gateway.stop();
+        // 主循环：定期检查关闭标志，收到 Ctrl+C 后优雅退出
+        while (!g_shutdown.load(std::memory_order_relaxed)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
+
+        // 从正常线程上下文调用 stop()
+        gateway.stop();
 
         std::cout << "[CtpGateway] Stopped cleanly\n";
 
