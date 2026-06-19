@@ -4,6 +4,11 @@
 get_filename_component(TYCHE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
 set(CTP_GATEWAY_DIR "${TYCHE_ROOT}/src/modules/ctp_gateway_cpp")
 
+# CTP SDK 头文件目录（如果父作用域未定义，使用默认值）
+if(NOT DEFINED CTP_SDK_DIR)
+    set(CTP_SDK_DIR "${CTP_GATEWAY_DIR}/include/ctp")
+endif()
+
 # GoogleTest via FetchContent
 include(FetchContent)
 FetchContent_Declare(
