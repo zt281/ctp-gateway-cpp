@@ -31,11 +31,15 @@ public:
      */
     explicit DllHandle(DllHandleType handle) noexcept : handle_(handle) {}
 
+#if defined(_WIN32) || defined(__CYGWIN__)
     /**
      * @brief Construct from void* (for cross-platform compatibility).
-     * @param handle Raw library handle as void*.
+     * On Windows, DllHandleType is HMODULE (not void*), so this overload
+     * allows constructing from raw void* pointers.
+     * On Linux, DllHandleType is already void*, so this overload is disabled.
      */
     explicit DllHandle(void* handle) noexcept : handle_(static_cast<DllHandleType>(handle)) {}
+#endif
 
     /**
      * @brief Destructor closes the library handle if valid.
