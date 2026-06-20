@@ -1,9 +1,7 @@
 #include "ctp_loader.h"
-#include "ThostFtdcMdApi.h"
-#include "ThostFtdcTraderApi.h"
+#include "gateway_log.h"
 
 #include <cstring>
-#include <iostream>
 #include <stdexcept>
 #include <string>
 #include <string.h>  // for strnlen (MSVC compat)
@@ -82,8 +80,7 @@ static void* find_export_containing(HMODULE h, const char* substr) {
 
             void* addr = reinterpret_cast<void*>(
                 const_cast<unsigned char*>(base) + func_rva);
-            std::cout << "[CtpLoader] Resolved '" << substr
-                      << "' via mangled export: " << fn_name << "\n";
+            LOG_INFO("Resolved '%s' via mangled export: %s", substr, fn_name);
             return addr;
         }
     }
@@ -246,36 +243,44 @@ using CreateMdApiFn = void* (*)(const char*, bool, bool, bool);
 using CreateTdApiFn = void* (*)(const char*, bool);
 
 // ── 公开创建函数 ───────────────────────────────────────────────
-CThostFtdcMdApi* CtpLoader::create_md_api(const std::string& dll_dir,
-                                            const std::string& dll_name,
-                                            const std::string& flow_path) {
+std::pair<DllHandle, MdApiPtr> CtpLoader::create_md_api(
+        const std::string& dll_dir,
+        const std::string& dll_name,
+        const std::string& flow_path) {
     std::string path = resolve_md_dll(dll_dir, dll_name);
     validate_dll_path(path, dll_name.empty() ? default_md_dll_name() : dll_name);
-    void* handle     = open_lib(path);
-    void* sym        = get_sym(handle, "CreateFtdcMdApi");
+    void* raw_handle = open_lib(path);
+    DllHandle dll(raw_handle);  // RAII: 自动释放 DLL
+    void* sym = get_sym(raw_handle, "CreateFtdcMdApi");
 
     auto fn = reinterpret_cast<CreateMdApiFn>(sym);
-    void* api = fn(flow_path.c_str(), false, false, false);
-    if (!api) {
+    void* raw_api = fn(flow_path.c_str(), false, false, false);
+    if (!raw_api) {
         throw std::runtime_error(
             "[CtpLoader] CreateFtdcMdApi returned null (dll=" + path + ")");
     }
-    return reinterpret_cast<CThostFtdcMdApi*>(api);
+
+    MdApiPtr api(reinterpret_cast<CThostFtdcMdApi*>(raw_api));
+    return {std::move(dll), std::move(api)};
 }
 
-CThostFtdcTraderApi* CtpLoader::create_td_api(const std::string& dll_dir,
-                                                const std::string& dll_name,
-                                                const std::string& flow_path) {
+std::pair<DllHandle, TdApiPtr> CtpLoader::create_td_api(
+        const std::string& dll_dir,
+        const std::string& dll_name,
+        const std::string& flow_path) {
     std::string path = resolve_td_dll(dll_dir, dll_name);
     validate_dll_path(path, dll_name.empty() ? default_td_dll_name() : dll_name);
-    void* handle     = open_lib(path);
-    void* sym        = get_sym(handle, "CreateFtdcTraderApi");
+    void* raw_handle = open_lib(path);
+    DllHandle dll(raw_handle);  // RAII: 自动释放 DLL
+    void* sym = get_sym(raw_handle, "CreateFtdcTraderApi");
 
     auto fn = reinterpret_cast<CreateTdApiFn>(sym);
-    void* api = fn(flow_path.c_str(), false);
-    if (!api) {
+    void* raw_api = fn(flow_path.c_str(), false);
+    if (!raw_api) {
         throw std::runtime_error(
             "[CtpLoader] CreateFtdcTraderApi returned null (dll=" + path + ")");
     }
-    return reinterpret_cast<CThostFtdcTraderApi*>(api);
+
+    TdApiPtr api(reinterpret_cast<CThostFtdcTraderApi*>(raw_api));
+    return {std::move(dll), std::move(api)};
 }

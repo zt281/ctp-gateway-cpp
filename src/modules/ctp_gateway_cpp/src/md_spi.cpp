@@ -1,5 +1,7 @@
 #include "md_spi.h"
+#include "quote_tick.h"
 #include <cstring>
+#include <chrono>
 #include <iostream>
 #include <string.h>  // for strnlen (MSVC compat)
 
@@ -7,6 +9,8 @@
 #  define WIN32_LEAN_AND_MEAN
 #  include <windows.h>  // for SecureZeroMemory
 #endif
+
+using namespace std::chrono;
 
 // 安全复制字符串到固定大小缓冲区，确保以 '\0' 结尾
 static void safe_copy(char* dest, size_t dest_size, const char* src) {
@@ -34,8 +38,8 @@ static std::string safe_string(const char* src, size_t max_len) {
 
 // ── 构造函数 ───────────────────────────────────────────────────
 MdSpiImpl::MdSpiImpl(const GatewayConfig& cfg,
-                     CThostFtdcMdApi*     md_api,
-                     QuoteCallback         on_quote)
+                     CThostFtdcMdApi*   md_api,
+                     QuoteCallback      on_quote)
     : cfg_(cfg), md_api_(md_api), on_quote_cb_(std::move(on_quote)) {}
 
 // ── 合约列表设置 ───────────────────────────────────────────────
@@ -153,6 +157,16 @@ void MdSpiImpl::OnRspSubMarketData(
 // ── 行情推送 ───────────────────────────────────────────────────
 void MdSpiImpl::OnRtnDepthMarketData(CThostFtdcDepthMarketDataField* p) {
     if (!p) return;
+
+    // Create QuoteTick for efficient hot-path processing
+    QuoteTick tick = depth_to_tick(p);
+
+    // Update last tick timestamp
+    last_tick_time_.store(tick.receive_ts_ns > 0
+        ? steady_clock::time_point(steady_clock::duration(tick.receive_ts_ns))
+        : steady_clock::now());
+
+    // Call depth_to_payload for backward compatibility
     tyche::Payload payload = depth_to_payload(p);
     on_quote_cb_(payload);
 }
@@ -181,4 +195,31 @@ tyche::Payload MdSpiImpl::depth_to_payload(
     p["update_millisec"]   = static_cast<int>(d->UpdateMillisec);
     p["trading_day"]       = safe_string(d->TradingDay, sizeof(d->TradingDay));
     return p;
+}
+
+// ── DepthMarketData → QuoteTick 转换 ──────────────────────────
+QuoteTick MdSpiImpl::depth_to_tick(
+    const CThostFtdcDepthMarketDataField* d) {
+    QuoteTick tick{};
+    safe_copy(tick.instrument_id, sizeof(tick.instrument_id), d->InstrumentID);
+    safe_copy(tick.exchange_id,   sizeof(tick.exchange_id),   d->ExchangeID);
+    safe_copy(tick.update_time,   sizeof(tick.update_time),   d->UpdateTime);
+    safe_copy(tick.trading_day,   sizeof(tick.trading_day),   d->TradingDay);
+    tick.last_price         = d->LastPrice;
+    tick.volume             = static_cast<int>(d->Volume);
+    tick.bid_price1         = d->BidPrice1;
+    tick.bid_volume1        = static_cast<int>(d->BidVolume1);
+    tick.ask_price1         = d->AskPrice1;
+    tick.ask_volume1        = static_cast<int>(d->AskVolume1);
+    tick.upper_limit_price  = d->UpperLimitPrice;
+    tick.lower_limit_price  = d->LowerLimitPrice;
+    tick.open_price         = d->OpenPrice;
+    tick.high_price         = d->HighestPrice;
+    tick.low_price          = d->LowestPrice;
+    tick.pre_settle_price   = d->PreSettlementPrice;
+    tick.open_interest      = d->OpenInterest;
+    tick.turnover           = d->Turnover;
+    tick.update_millisec    = static_cast<int>(d->UpdateMillisec);
+    tick.receive_ts_ns      = steady_clock::now().time_since_epoch().count();
+    return tick;
 }

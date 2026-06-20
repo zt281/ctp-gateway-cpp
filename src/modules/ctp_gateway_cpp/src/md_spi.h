@@ -1,8 +1,10 @@
 #pragma once
 #include "config.h"
 #include "ThostFtdcMdApi.h"
+#include "quote_tick.h"
 #include "tyche/cpp/types.h"
 #include <atomic>
+#include <chrono>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -55,12 +57,17 @@ private:
     static tyche::Payload depth_to_payload(
         const CThostFtdcDepthMarketDataField* d);
 
+    // 将 CTP DepthMarketData 转换为高效 POD QuoteTick
+    static QuoteTick depth_to_tick(
+        const CThostFtdcDepthMarketDataField* d);
+
     const GatewayConfig&     cfg_;
-    CThostFtdcMdApi*         md_api_;
+    CThostFtdcMdApi*        md_api_;
     QuoteCallback             on_quote_cb_;
     std::vector<std::string>              instruments_;
     std::vector<std::vector<char>>        instrument_buffers_;
     std::mutex                            inst_mtx_;
     std::atomic<bool>                     logged_in_{false};
     std::atomic<int>                      req_id_{0};
+    std::atomic<std::chrono::steady_clock::time_point> last_tick_time_{std::chrono::steady_clock::time_point::min()};
 };

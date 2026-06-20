@@ -1,7 +1,7 @@
 #include "td_spi.h"
+#include "gateway_log.h"
 #include <chrono>
 #include <cstring>
-#include <iostream>
 #include <string.h>  // for strnlen (MSVC compat)
 
 #ifdef _WIN32
@@ -42,11 +42,15 @@ bool TdSpiImpl::wait_for_login(int timeout_secs) {
 
 // ── 连接建立 ───────────────────────────────────────────────────
 void TdSpiImpl::OnFrontConnected() {
-    std::cout << "[TdSpi] Front connected\n";
+    LOG_INFO("Front connected");
     do_authenticate_or_login();
 }
 
 void TdSpiImpl::do_authenticate_or_login() {
+    if (!td_api_) {
+        LOG_ERROR("td_api_ is null, cannot authenticate or login");
+        return;
+    }
     if (!cfg_.appid.empty()) {
         // 有 appid，先发认证请求
         CThostFtdcReqAuthenticateField req{};
@@ -57,9 +61,9 @@ void TdSpiImpl::do_authenticate_or_login() {
         int ret = td_api_->ReqAuthenticate(&req, ++req_id_);
         zero_password_field(req.AuthCode, sizeof(req.AuthCode));
         if (ret != 0) {
-            std::cerr << "[TdSpi] ReqAuthenticate failed, ret=" << ret << "\n";
+            LOG_ERROR("ReqAuthenticate failed, ret=%d", ret);
         } else {
-            std::cout << "[TdSpi] ReqAuthenticate sent\n";
+            LOG_INFO("ReqAuthenticate sent");
         }
     } else {
         // 无 appid，直接登录
@@ -68,6 +72,10 @@ void TdSpiImpl::do_authenticate_or_login() {
 }
 
 void TdSpiImpl::do_login() {
+    if (!td_api_) {
+        LOG_ERROR("td_api_ is null, cannot login");
+        return;
+    }
     CThostFtdcReqUserLoginField req{};
     safe_copy(req.BrokerID, sizeof(req.BrokerID), cfg_.broker_id.c_str());
     safe_copy(req.UserID,   sizeof(req.UserID),   cfg_.user_id.c_str());
@@ -75,17 +83,16 @@ void TdSpiImpl::do_login() {
     int ret = td_api_->ReqUserLogin(&req, ++req_id_);
     zero_password_field(req.Password, sizeof(req.Password));
     if (ret != 0) {
-        std::cerr << "[TdSpi] ReqUserLogin failed, ret=" << ret << "\n";
+        LOG_ERROR("ReqUserLogin failed, ret=%d", ret);
     } else {
-        std::cout << "[TdSpi] ReqUserLogin sent\n";
+        LOG_INFO("ReqUserLogin sent");
     }
 }
 
 // ── 连接断开 ───────────────────────────────────────────────────
 void TdSpiImpl::OnFrontDisconnected(int nReason) {
     logged_in_ = false;
-    std::cerr << "[TdSpi] Front disconnected, reason=" << nReason
-              << ", TdApi will auto-reconnect...\n";
+    LOG_ERROR("Front disconnected, reason=%d, TdApi will auto-reconnect...", nReason);
 }
 
 // ── 认证响应 ───────────────────────────────────────────────────
@@ -94,11 +101,12 @@ void TdSpiImpl::OnRspAuthenticate(
     CThostFtdcRspInfoField*          pInfo,
     int /*nRequestID*/, bool /*bIsLast*/) {
     if (pInfo && pInfo->ErrorID != 0) {
-        std::cerr << "[TdSpi] Authenticate failed, ErrorID=" << pInfo->ErrorID
-                  << " Msg=" << (pInfo->ErrorMsg ? pInfo->ErrorMsg : "") << "\n";
+        LOG_ERROR("Authenticate failed, ErrorID=%d Msg=%s",
+                  pInfo->ErrorID,
+                  pInfo->ErrorMsg ? pInfo->ErrorMsg : "");
         return;
     }
-    std::cout << "[TdSpi] Authenticate OK, sending login...\n";
+    LOG_INFO("Authenticate OK, sending login...");
     do_login();
 }
 
@@ -108,16 +116,18 @@ void TdSpiImpl::OnRspUserLogin(
     CThostFtdcRspInfoField*       pInfo,
     int /*nRequestID*/, bool /*bIsLast*/) {
     if (pInfo && pInfo->ErrorID != 0) {
-        std::cerr << "[TdSpi] Login failed, ErrorID=" << pInfo->ErrorID
-                  << " Msg=" << (pInfo->ErrorMsg ? pInfo->ErrorMsg : "") << "\n";
+        LOG_ERROR("Login failed, ErrorID=%d Msg=%s",
+                  pInfo->ErrorID,
+                  pInfo->ErrorMsg ? pInfo->ErrorMsg : "");
         return;
     }
     std::string day = (pLogin && pLogin->TradingDay[0])
         ? std::string(pLogin->TradingDay, strnlen(pLogin->TradingDay, sizeof(pLogin->TradingDay)))
         : "N/A";
-    std::cout << "[TdSpi] Login OK, TradingDay=" << day
-              << " FrontID=" << (pLogin ? pLogin->FrontID : 0)
-              << " SessionID=" << (pLogin ? pLogin->SessionID : 0) << "\n";
+    LOG_INFO("Login OK, TradingDay=%s FrontID=%d SessionID=%d",
+             day.c_str(),
+             pLogin ? pLogin->FrontID : 0,
+             pLogin ? pLogin->SessionID : 0);
     {
         std::lock_guard<std::mutex> lock(mtx_);
         logged_in_ = true;
@@ -132,8 +142,8 @@ void TdSpiImpl::OnRspUserLogout(
     int /*nRequestID*/, bool /*bIsLast*/) {
     logged_in_ = false;
     if (pInfo && pInfo->ErrorID != 0) {
-        std::cerr << "[TdSpi] Logout error, ErrorID=" << pInfo->ErrorID << "\n";
+        LOG_ERROR("Logout error, ErrorID=%d", pInfo->ErrorID);
     } else {
-        std::cout << "[TdSpi] Logged out\n";
+        LOG_INFO("Logged out");
     }
 }

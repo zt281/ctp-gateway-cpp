@@ -3,15 +3,18 @@
 #include "md_spi.h"
 #include "td_spi.h"
 #include "tyche/cpp/module.h"
+#include "tyche/cpp/engine/ring_buffer.h"
+#include "quote_tick.h"
+#include "quote_validator.h"
+#include "dll_handle.h"
+#include "ctp_api_raii.h"
+#include "gateway_log.h"
 #include <atomic>
-#include <condition_variable>
+#include <chrono>
 #include <memory>
-#include <mutex>
-#include <queue>
 #include <string>
 #include <thread>
-#include <algorithm>
-#include <vector>
+#include <unordered_set>
 
 // CtpGateway — C++ TycheModule，封装 CTP 行情/交易 API。
 //
@@ -22,7 +25,7 @@
 //
 // 混合路由策略：
 //   - 期货行情: send_event("quote", ...) 广播给所有 greeks_engine 实例
-//   - 期权行情: request_event("compute_greeks", ...) 轮询分发到单个实例
+//   - 期权行情: send_event("send_compute_greeks", ...) 广播到 greeks_engine 实例
 class CtpGateway : public tyche::TycheModule {
 public:
     explicit CtpGateway(const GatewayConfig& cfg);
@@ -30,6 +33,30 @@ public:
 
     void start() override;
     void stop()  override;
+
+    // Return a snapshot of gateway metrics as a Payload.
+    // Used by the "gateway_status" job handler and for testing.
+    tyche::Payload get_status_payload() const;
+
+    // Convert QuoteTick to Payload for greeks engine consumption
+    static tyche::Payload tick_to_payload(const QuoteTick& tick);
+
+    // Get age of last tick in milliseconds
+    int64_t last_tick_age_ms() const {
+        auto now = std::chrono::steady_clock::now().time_since_epoch().count();
+        auto last = last_tick_ns_.load(std::memory_order_acquire);
+        return static_cast<int64_t>((now - last) / 1'000'000);
+    }
+
+    // Check if last tick is stale (no update for >5 seconds)
+    bool is_tick_stale() const {
+        return last_tick_age_ms() > 5000;
+    }
+
+    // Get reconnection count
+    int reconnect_count() const {
+        return reconnect_count_.load(std::memory_order_relaxed);
+    }
 
 protected:
     void _start_workers() override;
@@ -55,28 +82,37 @@ private:
         const tyche::Payload& response);
 
     GatewayConfig              cfg_;
-    std::vector<std::string>   instruments_;        // 全部合约（用于 CTP 订阅）
-    std::vector<std::string>   option_instruments_; // 排序后的期权合约列表（启动后只读）
+    std::vector<std::string>   instruments_;           // 全部合约（用于 CTP 订阅）
+    std::unordered_set<std::string> option_instrument_set_; // 期权合约集合（O(1) 查找）
 
-    // 期权行情分发队列（CTP 回调线程→分发线程）
-    std::queue<tyche::Payload>      option_queue_;
-    std::mutex                      option_queue_mtx_;
-    std::condition_variable         option_queue_cv_;
-    std::thread                     option_dispatch_thread_;
+    // 期权行情 RingBuffer（CTP 回调线程→分发线程，MPSC 安全）
+    tyche::RingBuffer<QuoteTick> option_ring_buffer_;
+    std::thread                 option_dispatch_thread_;
 
-    // CTP API 对象（运行时通过 ctp_loader 创建）
-    CThostFtdcMdApi*           md_api_  = nullptr;
-    CThostFtdcTraderApi*       td_api_  = nullptr;
+    // CTP API 对象 + DLL 句柄（RAII 管理）
+    MdApiPtr               md_api_;
+    TdApiPtr               td_api_;
+    DllHandle              md_dll_;
+    DllHandle              td_dll_;
     std::unique_ptr<MdSpiImpl> md_spi_;
     std::unique_ptr<TdSpiImpl> td_spi_;
-    std::atomic<bool>          ctp_running_{false};
-    std::atomic<bool>          cleanup_done_{false};
-    std::atomic<bool>          started_{false};      // 防止重复启动
-    std::atomic<bool>          stopping_{false};     // 防止重复停止
-    std::atomic<int>           option_err_count_{0};
-    std::atomic<int>           option_dropped_count_{0};
+    std::atomic<bool>      ctp_running_{false};
+    std::atomic<bool>      cleanup_done_{false};
+    std::atomic<bool>      started_{false};      // 防止重复启动
+    std::atomic<bool>      stopping_{false};     // 防止重复停止
+    std::atomic<uint64_t>  ticks_received_{0};
+    std::atomic<uint64_t>  ticks_sent_{0};
+    std::atomic<int>       option_err_count_{0};
+    std::atomic<int>       option_dropped_count_{0};
+    std::atomic<bool>      tick_stale_{false};
+    std::atomic<uint64_t>  last_tick_ns_{0};     // 最后行情时间戳（纳秒）
+    std::atomic<int>       reconnect_count_{0}; // 重连次数
+    std::chrono::steady_clock::time_point start_time_;
+
+    // QuoteValidator 用于数据质量检查
+    QuoteValidator         quote_validator_;
 
     // RegisterFront 需要可变 char*（CTP 内部会复制，但签名要求非 const）
-    std::string                md_front_mut_;
-    std::string                td_front_mut_;
+    std::string            md_front_mut_;
+    std::string            td_front_mut_;
 };

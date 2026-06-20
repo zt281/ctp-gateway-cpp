@@ -44,8 +44,8 @@ private:
     void do_authenticate_or_login();
     void do_login();
 
-    const GatewayConfig&     cfg_;
-    CThostFtdcTraderApi*     td_api_;
+    const GatewayConfig&       cfg_;
+    CThostFtdcTraderApi*    td_api_;
     std::atomic<bool>        logged_in_{false};
     std::mutex               mtx_;
     std::condition_variable  cv_;

@@ -1,3 +1,12 @@
+cmake_minimum_required(VERSION 3.16)
+project(ctp_gateway_cpp CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Force UTF-8 source encoding for MSVC to support Chinese comments
+add_compile_options($<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
+
 # msgpack-c: 不依赖 Boost
 add_definitions(-DMSGPACK_NO_BOOST)
 
@@ -45,6 +54,9 @@ if(NOT EXISTS "${CTP_HEADER_MD}" OR NOT EXISTS "${CTP_HEADER_TD}")
 else()
     message(STATUS "CTP SDK headers found: ${CTP_SDK_DIR}")
 endif()
+
+# 将 CTP_SDK_DIR 提升到父作用域，供测试子目录使用
+set(CTP_SDK_DIR "${CTP_SDK_DIR}" PARENT_SCOPE)
 
 # ── 可执行目标 ─────────────────────────────────────────────
 add_executable(ctp_gateway_cpp
