@@ -231,7 +231,7 @@ std::vector<std::string> CtpGateway::extract_instrument_ids(
 // 将 QuoteTick 转换为 Payload 用于 greeks engine 消费
 tyche::Payload CtpGateway::tick_to_payload(const QuoteTick& tick) {
     tyche::Payload payload;
-    payload["instrument_id"] = tick.instrument_id_sv();
+    payload["instrument_id"] = std::string(tick.instrument_id_sv());
     payload["exchange_id"]   = std::string(tick.exchange_id);
     payload["last_price"]    = tick.last_price;
     payload["volume"]       = tick.volume;
