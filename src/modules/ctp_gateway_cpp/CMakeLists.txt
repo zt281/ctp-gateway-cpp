@@ -4,17 +4,49 @@ project(ctp_gateway_cpp CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Force UTF-8 source encoding for MSVC to support Chinese comments
-add_compile_options($<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
-
 # msgpack-c: 不依赖 Boost
 add_definitions(-DMSGPACK_NO_BOOST)
 
 # ── 项目根目录（从 src/modules/ctp_gateway_cpp 回到根）──────────
-get_filename_component(TYCHE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
+if(NOT DEFINED TYCHE_ROOT)
+    get_filename_component(TYCHE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
+    set(TYCHE_ROOT "${TYCHE_ROOT}" CACHE PATH "TycheEngine root directory")
+endif()
+
+# ── 独立构建模式检测 ──
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    message(STATUS "src/modules/ctp_gateway_cpp: standalone build mode")
+    cmake_minimum_required(VERSION 3.16)
+    project(ctp_gateway_cpp CXX)
+    set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+    if(MSVC)
+        add_compile_options(/utf-8)
+    endif()
+    # 独立构建时设置输出目录
+    if(WIN32)
+        set(TYCHE_RUNTIME_DIR "${TYCHE_ROOT}/runtime/win")
+    else()
+        set(TYCHE_RUNTIME_DIR "${TYCHE_ROOT}/runtime/linux")
+    endif()
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${TYCHE_RUNTIME_DIR})
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${TYCHE_RUNTIME_DIR})
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${TYCHE_RUNTIME_DIR})
+    foreach(OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES})
+        string(TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG_UPPER)
+        set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG_UPPER} ${TYCHE_RUNTIME_DIR})
+        set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${OUTPUTCONFIG_UPPER} ${TYCHE_RUNTIME_DIR})
+        set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG_UPPER} ${TYCHE_RUNTIME_DIR})
+    endforeach()
+else()
+    message(STATUS "src/modules/ctp_gateway_cpp: subdirectory build mode (parent: ${CMAKE_SOURCE_DIR})")
+endif()
 
 # ── 第三方库 ──────────────────────────────────────────────────
-set(THIRD_PARTY_DIR "${TYCHE_ROOT}/third_party")
+if(NOT DEFINED THIRD_PARTY_DIR)
+    set(THIRD_PARTY_DIR "${TYCHE_ROOT}/third_party" CACHE PATH "Third-party directory")
+endif()
 
 # ── 构建 tyche_module 静态库（防止父项目已添加）────────────────
 if(NOT TARGET tyche_module)

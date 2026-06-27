@@ -1,7 +1,23 @@
 # CTP Gateway 单元测试
 # 从 src/modules/ctp_gateway_cpp/CMakeLists.txt 迁移
+# 支持独立构建（作为顶层 CMake 项目）或作为子目录构建
 
-get_filename_component(TYCHE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    cmake_minimum_required(VERSION 3.16)
+    project(ctp_gateway_unit_tests CXX)
+    set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+    if(MSVC)
+        add_compile_options(/utf-8)
+    endif()
+endif()
+
+if(NOT DEFINED TYCHE_ROOT)
+    get_filename_component(TYCHE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
+    set(TYCHE_ROOT "${TYCHE_ROOT}" CACHE PATH "TycheEngine root directory")
+endif()
+
 set(CTP_GATEWAY_DIR "${TYCHE_ROOT}/src/modules/ctp_gateway_cpp")
 
 # CTP SDK 头文件目录（如果父作用域未定义，使用默认值）
