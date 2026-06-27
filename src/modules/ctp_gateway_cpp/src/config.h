@@ -1,5 +1,6 @@
 #pragma once
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <map>
 #include <string>
@@ -77,6 +78,25 @@ struct GatewayConfig {
     // 重连与超时
     int reconnect_interval_secs  = 5;
     int static_data_timeout_secs = 15;
+
+    // ── SHM 调优参数 ──
+    struct ShmTuning {
+        uint32_t ring_buffer_capacity = 65536;   // RingBuffer 容量
+        uint32_t shm_slot_count       = 2048;    // SHM 队列槽位数
+        uint32_t shm_max_msg_size     = 4096;    // SHM 单槽最大消息字节数
+        uint32_t dispatch_batch_size  = 64;      // option_dispatch_loop 批量弹出数
+        uint32_t spin_threshold       = 1000;    // 自适应自旋阈值
+        uint32_t yield_threshold      = 10000;   // 自适应让出阈值
+        uint32_t sleep_us             = 100;     // 自适应休眠微秒数
+    };
+    ShmTuning shm_tuning;
+
+    // ── 共享内存配置（DLL 模式）──
+    std::string shm_queue_name;                           // SHM 队列名（DLL 模式由引擎传入）
+    size_t shm_buffer_size = 1048576;                     // SHM 缓冲区大小（默认 1MB）
+    bool use_shared_memory = false;                       // 启用 SHM 通信
+    std::vector<std::string> pre_resolved_instruments;    // 预解析合约列表（DLL 模式）
+    std::vector<std::string> pre_resolved_option_instruments; // 预解析期权合约列表
 
     // 从 JSON 文件加载配置
     static GatewayConfig from_file(const std::string& path);

@@ -18,6 +18,10 @@ if(NOT DEFINED TYCHE_ROOT)
     set(TYCHE_ROOT "${TYCHE_ROOT}" CACHE PATH "TycheEngine root directory")
 endif()
 
+if(NOT DEFINED THIRD_PARTY_DIR)
+    set(THIRD_PARTY_DIR "${TYCHE_ROOT}/third_party" CACHE PATH "Third-party directory")
+endif()
+
 set(CTP_GATEWAY_DIR "${TYCHE_ROOT}/src/modules/ctp_gateway_cpp")
 
 # CTP SDK 头文件目录（如果父作用域未定义，使用默认值）
@@ -46,6 +50,7 @@ if(CTP_GATEWAY_TEST_SOURCES)
         ${CTP_GATEWAY_DIR}/src/config.cpp
         ${CTP_GATEWAY_DIR}/src/md_spi.cpp
         ${CTP_GATEWAY_DIR}/src/td_spi.cpp
+        "${TYCHE_ROOT}/src/tyche/cpp/engine/shared_memory_queue.cpp"  # SharedMemoryQueue (shm_writer.h)
     )
 
     add_executable(ctp_gateway_tests
@@ -58,6 +63,7 @@ if(CTP_GATEWAY_TEST_SOURCES)
         "${TYCHE_ROOT}/src"
         "${TYCHE_ROOT}/third_party"
         "${CTP_SDK_DIR}"
+        "${THIRD_PARTY_DIR}/msgpack-c/include"  # msgpack.hpp (shm_writer.h)
     )
 
     target_link_libraries(ctp_gateway_tests PRIVATE

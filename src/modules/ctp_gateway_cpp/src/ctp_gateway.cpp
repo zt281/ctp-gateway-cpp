@@ -1,6 +1,8 @@
 #include "ctp_gateway.h"
 #include "ctp_loader.h"
 #include "ctp_api_adapter.h"
+#include "shm_writer.h"
+#include <algorithm>
 #include <any>
 #include <chrono>
 #include <cstring>
@@ -16,7 +18,7 @@ CtpGateway::CtpGateway(const GatewayConfig& cfg)
       cfg_(cfg),
       md_front_mut_(cfg.md_front),
       td_front_mut_(cfg.td_front),
-      option_ring_buffer_(65536)  // RingBuffer 容量 65536
+      option_ring_buffer_(cfg.shm_tuning.ring_buffer_capacity)
 {
     // 声明 quote 生产者接口（广播期货行情）
     _register_producer("send_quote", tyche::InterfacePattern::SEND);
@@ -38,6 +40,7 @@ CtpGateway::CtpGateway(const GatewayConfig& cfg)
         resp["uptime_secs"] = std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - start_time_).count();
         resp["last_tick_age_ms"] = last_tick_age_ms();
+        resp["shm_write_failures"] = shm_write_fail_count_.load(std::memory_order_relaxed);
         return resp;
     });
 }
@@ -57,22 +60,22 @@ void CtpGateway::start() {
         return;
     }
 
-    // 1. 调用基类 start：完成 TycheEngine 注册、ZMQ 连接
-    tyche::TycheModule::start();
+    if (!is_shm_mode()) {
+        // ZMQ 模式：调用基类 start 完成注册和 ZMQ 连接
+        tyche::TycheModule::start();
 
-    if (!is_registered()) {
-        LOG_ERROR("Failed to register with engine, aborting");
-        return;
+        if (!is_registered()) {
+            LOG_ERROR("Failed to register with engine, aborting");
+            return;
+        }
+        LOG_INFO("Registered as %s", module_id().c_str());
+    } else {
+        LOG_INFO("Running in SHM mode (queue: %s)", shm_queue_->name().c_str());
     }
-    LOG_INFO("Registered as %s", module_id().c_str());
 
-    // 2. 查询合约列表
+    // 以下步骤两种模式共用
     resolve_instruments();
-
-    // 3. 初始化 CTP（设置 ctp_running_ = true）
     init_ctp();
-
-    // 4. 启动期权行情分发后台线程（必须在 init_ctp 之后，否则 ctp_running_=false 线程立即退出）
     option_dispatch_thread_ = std::thread([this]() { option_dispatch_loop(); });
 }
 
@@ -83,6 +86,22 @@ void CtpGateway::_start_workers() {
 
 // ── resolve_instruments() ─────────────────────────────────────
 void CtpGateway::resolve_instruments() {
+    // SHM 模式 + 预解析列表 → 直接使用，无需 ZMQ 查询
+    if (is_shm_mode() && !cfg_.pre_resolved_instruments.empty()) {
+        instruments_ = cfg_.pre_resolved_instruments;
+        // 使用现有 underlyings 配置推导期权合约 ID 模式
+        // 期权合约 ID 通常包含 product_id 前缀，如 "ag2501C5000" 或 "IO2501-C-4000"
+        // 简单方式：如果 pre_resolved_option_instruments 已提供则直接使用
+        if (!cfg_.pre_resolved_option_instruments.empty()) {
+            for (const auto& id : cfg_.pre_resolved_option_instruments) {
+                option_instrument_set_.insert(id);
+            }
+        }
+        LOG_INFO("Using %zu pre-resolved instruments (%zu options) (SHM mode)",
+                 instruments_.size(), option_instrument_set_.size());
+        return;
+    }
+
     instruments_.clear();
     option_instrument_set_.clear();
 
@@ -310,6 +329,36 @@ void CtpGateway::init_ctp() {
     }
 }
 
+// ── send_shm_event() ─────────────────────────────────────────────
+bool CtpGateway::send_shm_event(const std::string& event_type, const tyche::Payload& payload) {
+    std::lock_guard<std::mutex> lock(shm_write_lock_);
+    if (write_shm_event_tls(shm_queue_, event_type, cfg_.family_name, payload)) {
+        ticks_sent_.fetch_add(1, std::memory_order_relaxed);
+        return true;
+    }
+    auto cnt = shm_write_fail_count_.fetch_add(1, std::memory_order_relaxed);
+    if (cnt % 1000 == 0) {
+        LOG_WARN("SHM write failed for '%s' (total failures: %llu)",
+                 event_type.c_str(), static_cast<unsigned long long>(cnt + 1));
+    }
+    return false;
+}
+
+// ── send_shm_quote_tick() ────────────────────────────────────────
+bool CtpGateway::send_shm_quote_tick(const QuoteTick& tick) {
+    std::lock_guard<std::mutex> lock(shm_write_lock_);
+    if (write_shm_quote_tick(shm_queue_, cfg_.family_name, tick)) {
+        ticks_sent_.fetch_add(1, std::memory_order_relaxed);
+        return true;
+    }
+    auto cnt = shm_write_fail_count_.fetch_add(1, std::memory_order_relaxed);
+    if (cnt % 1000 == 0) {
+        LOG_WARN("SHM quote tick write failed (total failures: %llu)",
+                 static_cast<unsigned long long>(cnt + 1));
+    }
+    return false;
+}
+
 // ── on_quote_received() ────────────────────────────────────────
 void CtpGateway::on_quote_received(const tyche::Payload& payload) {
     // 更新最后行情时间戳
@@ -417,8 +466,12 @@ void CtpGateway::on_quote_received(const tyche::Payload& payload) {
         }
     } else {
         // 期货: 广播给所有 greeks_engine 实例
-        send_event("quote", payload);
-        ticks_sent_.fetch_add(1, std::memory_order_relaxed);
+        if (is_shm_mode()) {
+            send_shm_event("quote", payload);
+        } else {
+            send_event("quote", payload);
+            ticks_sent_.fetch_add(1, std::memory_order_relaxed);
+        }
     }
 
     // 递增接收计数
@@ -436,9 +489,9 @@ void CtpGateway::option_dispatch_loop() {
 
     // Adaptive spin/yield/sleep state
     int idle_spins = 0;
-    constexpr int SPIN_THRESHOLD = 1000;
-    constexpr int YIELD_THRESHOLD = 10000;
-    constexpr int BATCH_SIZE = 64;
+    const uint32_t SPIN_THRESHOLD  = cfg_.shm_tuning.spin_threshold;
+    const uint32_t YIELD_THRESHOLD = cfg_.shm_tuning.yield_threshold;
+    const uint32_t BATCH_SIZE      = std::min(cfg_.shm_tuning.dispatch_batch_size, uint32_t{256});
 
     while (ctp_running_.load(std::memory_order_relaxed)) {
         // Stale detection check
@@ -446,14 +499,16 @@ void CtpGateway::option_dispatch_loop() {
         if (now - last_stale_check >= stale_check_interval) {
             if (last_tick_age_ms() > stale_threshold_ms) {
                 tick_stale_.store(true, std::memory_order_release);
+            } else {
+                tick_stale_.store(false, std::memory_order_release);
             }
             last_stale_check = now;
         }
 
         // 批量弹出期权行情
-        QuoteTick batch[BATCH_SIZE];
+        QuoteTick batch[256];
         size_t n = 0;
-        while (n < BATCH_SIZE) {
+        while (n < BATCH_SIZE && n < 256) {
             auto tick_opt = option_ring_buffer_.pop();
             if (!tick_opt.has_value()) break;
             batch[n++] = std::move(*tick_opt);
@@ -464,8 +519,12 @@ void CtpGateway::option_dispatch_loop() {
             for (size_t i = 0; i < n; ++i) {
                 // 发送 send_compute_greeks 事件（广播到 greeks_engine）
                 try {
-                    send_event("send_compute_greeks", tick_to_payload(batch[i]));
-                    ticks_sent_.fetch_add(1, std::memory_order_relaxed);
+                    if (is_shm_mode()) {
+                        send_shm_quote_tick(batch[i]);
+                    } else {
+                        send_event("send_compute_greeks", tick_to_payload(batch[i]));
+                        ticks_sent_.fetch_add(1, std::memory_order_relaxed);
+                    }
                 } catch (const std::exception& e) {
                     int ec = option_err_count_.fetch_add(1, std::memory_order_relaxed);
                     if (ec < 5) {
@@ -488,7 +547,7 @@ void CtpGateway::option_dispatch_loop() {
             } else if (idle_spins < YIELD_THRESHOLD) {
                 std::this_thread::yield();
             } else {
-                std::this_thread::sleep_for(std::chrono::microseconds(100));
+                std::this_thread::sleep_for(std::chrono::microseconds(cfg_.shm_tuning.sleep_us));
             }
         }
     }
@@ -500,8 +559,12 @@ void CtpGateway::option_dispatch_loop() {
             break;
         }
         try {
-            send_event("send_compute_greeks", tick_to_payload(tick_opt.value()));
-            ticks_sent_.fetch_add(1, std::memory_order_relaxed);
+            if (is_shm_mode()) {
+                send_shm_quote_tick(tick_opt.value());
+            } else {
+                send_event("send_compute_greeks", tick_to_payload(tick_opt.value()));
+                ticks_sent_.fetch_add(1, std::memory_order_relaxed);
+            }
         } catch (...) {
             // 忽略 drain 阶段的错误
         }
@@ -518,7 +581,7 @@ void CtpGateway::option_dispatch_loop() {
 // ── get_status_payload() ───────────────────────────────────────
 tyche::Payload CtpGateway::get_status_payload() const {
     tyche::Payload status;
-    status["module_id"]        = module_id();
+    status["module_id"]        = is_shm_mode() ? std::string(cfg_.family_name) : module_id();
     status["ticks_received"]   = static_cast<int64_t>(
         ticks_received_.load(std::memory_order_relaxed));
     status["ticks_sent"]       = static_cast<int64_t>(
@@ -533,6 +596,8 @@ tyche::Payload CtpGateway::get_status_payload() const {
     status["ctp_running"]      = ctp_running_.load(std::memory_order_relaxed);
     status["ring_buffer_size"] = option_ring_buffer_.size();
     status["ring_buffer_cap"]   = option_ring_buffer_.capacity();
+    status["shm_write_failures"] = static_cast<int64_t>(
+        shm_write_fail_count_.load(std::memory_order_relaxed));
     return status;
 }
 
@@ -551,8 +616,10 @@ void CtpGateway::stop() {
     // 3. 再释放 CTP 资源（此时 dispatch 线程已退出，不会调用 send_event）
     cleanup_ctp();
 
-    // 4. 最后关闭 ZMQ 等基类资源
-    tyche::TycheModule::stop();
+    // 4. ZMQ 模式下关闭基类资源
+    if (!is_shm_mode()) {
+        tyche::TycheModule::stop();
+    }
 }
 
 // ── cleanup_ctp() ─────────────────────────────────────────────
