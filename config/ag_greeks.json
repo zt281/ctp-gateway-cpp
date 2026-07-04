@@ -9,5 +9,12 @@
             "SHFE": ["ag"]
         },
         "resolve_timeout": 10.0
-    }
+    },
+    "shm_modules": [
+        {
+            "library_path": "runtime/gateway/ctp_gateway_cpp.dll",
+            "shm_queue_name": "ctp_gateway",
+            "zmq_topics": []
+        }
+    ]
 }

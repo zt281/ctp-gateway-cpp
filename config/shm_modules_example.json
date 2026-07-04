@@ -1,0 +1,23 @@
+{
+  "host": "127.0.0.1",
+  "port": 5555,
+  "data_dir": "data",
+  "queue_capacity": 10000,
+  "shm_modules": [
+    {
+      "library_path": "modules/ctp_gateway_cpp.dll",
+      "shm_queue_name": "tyche_shm_ctp",
+      "zmq_topics": [],
+      "slot_count": 2048,
+      "max_msg_size": 4096
+    }
+  ],
+  "shm_bridges": [
+    {
+      "shm_queue_name": "tyche_shm_external",
+      "zmq_topic": "market_data",
+      "slot_count": 4096,
+      "max_msg_size": 8192
+    }
+  ]
+}

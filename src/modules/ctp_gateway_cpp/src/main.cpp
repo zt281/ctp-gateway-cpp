@@ -92,6 +92,24 @@ int main(int argc, char* argv[]) {
 
         CtpGateway gateway(cfg);
 
+        if (cfg.use_shared_memory) {
+            if (cfg.shm_queue_name.empty()) {
+                throw std::runtime_error(
+                    "Config missing required field: gateway.shm_queue_name "
+                    "when gateway.use_shared_memory is true");
+            }
+
+            tyche::ModuleSharedMemoryQueueConfig shm_cfg;
+            shm_cfg.name = cfg.shm_queue_name;
+            shm_cfg.slot_count = cfg.shm_tuning.shm_slot_count;
+            shm_cfg.max_msg_size = cfg.shm_tuning.shm_max_msg_size;
+
+            if (!gateway.open_shared_memory_queue(shm_cfg, /*owner=*/false)) {
+                throw std::runtime_error(
+                    "Failed to open shared memory queue: " + cfg.shm_queue_name);
+            }
+        }
+
         // 启动模块（非阻塞）
         gateway.start();
 

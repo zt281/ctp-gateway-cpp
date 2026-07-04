@@ -42,8 +42,8 @@ TEST(QuoteTick, EmptyInstrumentIdStringView) {
 
 TEST(QuoteTick, SizeIsStable) {
     // sizeof(QuoteTick) must be stable and known for ring buffer sizing
-    // Actual size is 208 bytes on this platform
-    EXPECT_EQ(sizeof(QuoteTick), 208u);
+    // Actual size is 192 bytes (3 cache lines, pack(1))
+    EXPECT_EQ(sizeof(QuoteTick), 192u);
 }
 
 // ── Hash-set option detection tests ────────────────────────────

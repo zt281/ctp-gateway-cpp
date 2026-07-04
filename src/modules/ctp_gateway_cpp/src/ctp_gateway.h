@@ -12,9 +12,11 @@
 #include <atomic>
 #include <chrono>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <unordered_set>
+#include "tyche/cpp/engine/shared_memory_queue.h"
 
 // CtpGateway — C++ TycheModule，封装 CTP 行情/交易 API。
 //
@@ -52,6 +54,12 @@ public:
     bool is_tick_stale() const {
         return last_tick_age_ms() > 5000;
     }
+
+    // ── SHM 模式支持 ──
+    // 设置共享内存队列指针（非拥有），启用 SHM 通信模式。
+    // 设置后 start() 将跳过 ZMQ 注册，直接通过 SHM 队列发送事件。
+    void set_shm_queue(tyche::SharedMemoryQueue* queue) { set_shared_memory_queue(queue); }
+    bool is_shm_mode() const { return has_shared_memory_queue(); }
 
     // Get reconnection count
     int reconnect_count() const {
@@ -107,6 +115,19 @@ private:
     std::atomic<bool>      tick_stale_{false};
     std::atomic<uint64_t>  last_tick_ns_{0};     // 最后行情时间戳（纳秒）
     std::atomic<int>       reconnect_count_{0}; // 重连次数
+
+    // ── SHM 模式 ──
+    mutable std::mutex shm_write_lock_;              // SHM 写入互斥锁（CTP 回调线程 + dispatch 线程）
+
+    // ── SHM 统一写入辅助 ──
+    // Write a generic SHM event (futures path). Returns true on success.
+    bool send_shm_event(const std::string& event_type, const tyche::Payload& payload);
+    // Write a QuoteTick SHM event (options path). Returns true on success.
+    bool send_shm_quote_tick(const QuoteTick& tick);
+
+    // Backpressure counter
+    std::atomic<uint64_t> shm_write_fail_count_{0};
+
     std::chrono::steady_clock::time_point start_time_;
 
     // QuoteValidator 用于数据质量检查
