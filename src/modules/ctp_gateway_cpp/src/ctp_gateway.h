@@ -58,8 +58,8 @@ public:
     // ── SHM 模式支持 ──
     // 设置共享内存队列指针（非拥有），启用 SHM 通信模式。
     // 设置后 start() 将跳过 ZMQ 注册，直接通过 SHM 队列发送事件。
-    void set_shm_queue(tyche::SharedMemoryQueue* queue) { shm_queue_ = queue; }
-    bool is_shm_mode() const { return shm_queue_ != nullptr; }
+    void set_shm_queue(tyche::SharedMemoryQueue* queue) { set_shared_memory_queue(queue); }
+    bool is_shm_mode() const { return has_shared_memory_queue(); }
 
     // Get reconnection count
     int reconnect_count() const {
@@ -117,7 +117,6 @@ private:
     std::atomic<int>       reconnect_count_{0}; // 重连次数
 
     // ── SHM 模式 ──
-    tyche::SharedMemoryQueue* shm_queue_ = nullptr;  // 非拥有指针，由 dll_entry.cpp 管理生命周期
     mutable std::mutex shm_write_lock_;              // SHM 写入互斥锁（CTP 回调线程 + dispatch 线程）
 
     // ── SHM 统一写入辅助 ──

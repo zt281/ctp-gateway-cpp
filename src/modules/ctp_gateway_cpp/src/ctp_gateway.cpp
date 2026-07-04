@@ -62,7 +62,7 @@ void CtpGateway::start() {
 
     if (!is_shm_mode()) {
         // ZMQ 模式：调用基类 start 完成注册和 ZMQ 连接
-        tyche::TycheModule::start();
+        start_zmq_transport();
 
         if (!is_registered()) {
             LOG_ERROR("Failed to register with engine, aborting");
@@ -70,7 +70,20 @@ void CtpGateway::start() {
         }
         LOG_INFO("Registered as %s", module_id().c_str());
     } else {
-        LOG_INFO("Running in SHM mode (queue: %s)", shm_queue_->name().c_str());
+        auto* queue = shared_memory_queue();
+        LOG_INFO("Running in SHM mode (queue: %s)",
+                 queue ? queue->name().c_str() : "(none)");
+        if (cfg_.enable_zmq_side_channel) {
+            LOG_INFO("Starting ZMQ side channel in SHM mode (%d retries, %dms interval)",
+                     cfg_.zmq_connect_retries,
+                     cfg_.zmq_connect_retry_interval_ms);
+            if (start_zmq_transport(cfg_.zmq_connect_retries,
+                                    cfg_.zmq_connect_retry_interval_ms)) {
+                LOG_INFO("ZMQ side channel registered as %s", module_id().c_str());
+            } else {
+                LOG_WARN("ZMQ side channel unavailable; continuing with SHM transport only");
+            }
+        }
     }
 
     // 以下步骤两种模式共用
@@ -86,6 +99,12 @@ void CtpGateway::_start_workers() {
 
 // ── resolve_instruments() ─────────────────────────────────────
 void CtpGateway::resolve_instruments() {
+    if (is_shm_mode() && cfg_.pre_resolved_instruments.empty() && !is_registered()) {
+        LOG_WARN("SHM mode has no ZMQ side channel and no pre-resolved instruments; "
+                 "skipping static_data query");
+        return;
+    }
+
     // SHM 模式 + 预解析列表 → 直接使用，无需 ZMQ 查询
     if (is_shm_mode() && !cfg_.pre_resolved_instruments.empty()) {
         instruments_ = cfg_.pre_resolved_instruments;
@@ -332,7 +351,7 @@ void CtpGateway::init_ctp() {
 // ── send_shm_event() ─────────────────────────────────────────────
 bool CtpGateway::send_shm_event(const std::string& event_type, const tyche::Payload& payload) {
     std::lock_guard<std::mutex> lock(shm_write_lock_);
-    if (write_shm_event_tls(shm_queue_, event_type, cfg_.family_name, payload)) {
+    if (send_event_shared_memory(event_type, payload)) {
         ticks_sent_.fetch_add(1, std::memory_order_relaxed);
         return true;
     }
@@ -347,7 +366,7 @@ bool CtpGateway::send_shm_event(const std::string& event_type, const tyche::Payl
 // ── send_shm_quote_tick() ────────────────────────────────────────
 bool CtpGateway::send_shm_quote_tick(const QuoteTick& tick) {
     std::lock_guard<std::mutex> lock(shm_write_lock_);
-    if (write_shm_quote_tick(shm_queue_, cfg_.family_name, tick)) {
+    if (write_shm_quote_tick(shared_memory_queue(), cfg_.family_name, tick)) {
         ticks_sent_.fetch_add(1, std::memory_order_relaxed);
         return true;
     }
@@ -617,7 +636,7 @@ void CtpGateway::stop() {
     cleanup_ctp();
 
     // 4. ZMQ 模式下关闭基类资源
-    if (!is_shm_mode()) {
+    if (is_running() || is_registered()) {
         tyche::TycheModule::stop();
     }
 }

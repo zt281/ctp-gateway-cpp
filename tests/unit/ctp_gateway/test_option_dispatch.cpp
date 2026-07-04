@@ -39,7 +39,7 @@ static tyche::Payload tick_to_payload(const QuoteTick& tick) {
 
 // Helper to create a QuoteTick with a given instrument ID.
 static QuoteTick make_tick(const char* inst_id, double price, int vol) {
-    QuoteTick tick;
+    QuoteTick tick{};  // zero-init for clean string fields
     std::strncpy(tick.instrument_id, inst_id, sizeof(tick.instrument_id) - 1);
     tick.last_price = price;
     tick.volume = vol;
@@ -55,13 +55,13 @@ namespace {
 TEST(OptionDispatchTest, QuoteTickIsPod) {
     // QuoteTick size may vary by platform/compiler; test is_pod instead of exact size
     static_assert(std::is_pod<QuoteTick>::value, "QuoteTick should be POD for efficient memory operations");
-    EXPECT_EQ(sizeof(QuoteTick), 208u);  // actual size on this platform
+    EXPECT_EQ(sizeof(QuoteTick), 192u);  // 3 cache lines, pack(1)
 }
 
 // ── tick_to_payload round-trip ────────────────────────────────────────
 
 TEST(OptionDispatchTest, TickToPayloadRoundTrip) {
-    QuoteTick tick;
+    QuoteTick tick{};  // value-initialize (zero) so strncpy fields are null-terminated
     std::strncpy(tick.instrument_id, "m2505", sizeof(tick.instrument_id) - 1);
     std::strncpy(tick.exchange_id, "DCE", sizeof(tick.exchange_id) - 1);
     tick.last_price = 3500.5;
@@ -272,7 +272,7 @@ TEST(OptionDispatchTest, GatewayHeaderHasRingBuffer) {
     // This is a compile-time check. If ctp_gateway.h includes the RingBuffer
     // member for option ticks, this test compiles and passes trivially.
     // We verify by checking sizeof(QuoteTick) is stable (it must be for RingBuffer).
-    EXPECT_EQ(sizeof(QuoteTick), 208u);
+    EXPECT_EQ(sizeof(QuoteTick), 192u);  // 3 cache lines, pack(1)
 }
 
 } // namespace

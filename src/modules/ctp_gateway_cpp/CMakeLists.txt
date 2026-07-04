@@ -24,20 +24,22 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     if(MSVC)
         add_compile_options(/utf-8)
     endif()
-    # 独立构建时设置输出目录
+    # 独立构建时按功能×平台分发到 build/{executables,libraries}/{win,linux}
     if(WIN32)
-        set(TYCHE_RUNTIME_DIR "${TYCHE_ROOT}/runtime/win")
+        set(TYCHE_PLATFORM "win")
     else()
-        set(TYCHE_RUNTIME_DIR "${TYCHE_ROOT}/runtime/linux")
+        set(TYCHE_PLATFORM "linux")
     endif()
+    set(TYCHE_RUNTIME_DIR "${TYCHE_ROOT}/build/executables/${TYCHE_PLATFORM}")
+    set(TYCHE_LIB_DIR "${TYCHE_ROOT}/build/libraries/${TYCHE_PLATFORM}")
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${TYCHE_RUNTIME_DIR})
-    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${TYCHE_RUNTIME_DIR})
-    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${TYCHE_RUNTIME_DIR})
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${TYCHE_LIB_DIR})
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${TYCHE_LIB_DIR})
     foreach(OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES})
         string(TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG_UPPER)
         set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG_UPPER} ${TYCHE_RUNTIME_DIR})
-        set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${OUTPUTCONFIG_UPPER} ${TYCHE_RUNTIME_DIR})
-        set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG_UPPER} ${TYCHE_RUNTIME_DIR})
+        set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${OUTPUTCONFIG_UPPER} ${TYCHE_LIB_DIR})
+        set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG_UPPER} ${TYCHE_LIB_DIR})
     endforeach()
 else()
     message(STATUS "src/modules/ctp_gateway_cpp: subdirectory build mode (parent: ${CMAKE_SOURCE_DIR})")
@@ -50,9 +52,8 @@ endif()
 
 # ── 构建 tyche_module 静态库（防止父项目已添加）────────────────
 if(NOT TARGET tyche_module)
-    # 引用 tyche/cpp 的 CMakeLists，复用其 libzmq 查找逻辑
-    add_subdirectory("${TYCHE_ROOT}/src/tyche/cpp"
-                     "${CMAKE_BINARY_DIR}/tyche_core")
+    add_subdirectory("${TYCHE_ROOT}/src/tyche/cpp/module"
+                     "${CMAKE_BINARY_DIR}/tyche_module")
 endif()
 
 # ── nlohmann/json（header-only，本地单文件）───────────────────
@@ -98,7 +99,6 @@ add_executable(ctp_gateway_cpp
     src/md_spi.cpp
     src/td_spi.cpp
     src/ctp_gateway.cpp
-    "${TYCHE_ROOT}/src/tyche/cpp/engine/shared_memory_queue.cpp"  # SharedMemoryQueue 实现（SHM 模式）
 )
 
 target_include_directories(ctp_gateway_cpp PRIVATE
@@ -135,7 +135,6 @@ if(CTP_GATEWAY_BUILD_SHARED)
         src/md_spi.cpp
         src/td_spi.cpp
         src/ctp_gateway.cpp
-        "${TYCHE_ROOT}/src/tyche/cpp/engine/shared_memory_queue.cpp"  # SharedMemoryQueue 实现（tyche_module 不含此文件）
     )
 
     add_library(ctp_gateway_cpp_shared SHARED ${CTP_GATEWAY_SHARED_SOURCES})
@@ -170,9 +169,13 @@ if(CTP_GATEWAY_BUILD_SHARED)
         # Do not set CXX_VISIBILITY_PRESET hidden — extern "C" exports must remain visible
     endif()
 
-    # 输出到 runtime/gateway/
+    # 输出到 build/libraries/{win,linux}/ (共享库归类为库文件)
     if(NOT DEFINED GATEWAY_OUTPUT_DIR)
-        set(GATEWAY_OUTPUT_DIR "${TYCHE_ROOT}/runtime/gateway")
+        if(WIN32)
+            set(GATEWAY_OUTPUT_DIR "${TYCHE_ROOT}/build/libraries/win")
+        else()
+            set(GATEWAY_OUTPUT_DIR "${TYCHE_ROOT}/build/libraries/linux")
+        endif()
     endif()
     file(MAKE_DIRECTORY "${GATEWAY_OUTPUT_DIR}")
 
@@ -189,6 +192,15 @@ if(CTP_GATEWAY_BUILD_SHARED)
             ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG_UPPER} "${GATEWAY_OUTPUT_DIR}"
         )
     endforeach()
+
+    set(CTP_GATEWAY_RUNTIME_MODULE_DIR "${TYCHE_ROOT}/runtime/engine/modules")
+    add_custom_command(TARGET ctp_gateway_cpp_shared POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CTP_GATEWAY_RUNTIME_MODULE_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:ctp_gateway_cpp_shared>"
+            "${CTP_GATEWAY_RUNTIME_MODULE_DIR}/$<TARGET_FILE_NAME:ctp_gateway_cpp_shared>"
+        COMMENT "Copying ctp_gateway_cpp shared module to runtime/engine/modules"
+    )
 
     install(TARGETS ctp_gateway_cpp_shared DESTINATION gateway)
 

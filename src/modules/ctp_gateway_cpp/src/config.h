@@ -95,6 +95,9 @@ struct GatewayConfig {
     std::string shm_queue_name;                           // SHM 队列名（DLL 模式由引擎传入）
     size_t shm_buffer_size = 1048576;                     // SHM 缓冲区大小（默认 1MB）
     bool use_shared_memory = false;                       // 启用 SHM 通信
+    bool enable_zmq_side_channel = false;                 // SHM 模式下启用 ZMQ job/control 通道
+    int zmq_connect_retries = 30;                         // ZMQ side channel 注册重试次数
+    int zmq_connect_retry_interval_ms = 500;              // ZMQ side channel 重试间隔
     std::vector<std::string> pre_resolved_instruments;    // 预解析合约列表（DLL 模式）
     std::vector<std::string> pre_resolved_option_instruments; // 预解析期权合约列表
 

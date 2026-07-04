@@ -88,6 +88,21 @@ GatewayConfig GatewayConfig::from_file(const std::string& path) {
     if (gw.contains("shm_queue_name")) cfg.shm_queue_name = gw["shm_queue_name"].get<std::string>();
     if (gw.contains("shm_buffer_size")) cfg.shm_buffer_size = gw["shm_buffer_size"].get<size_t>();
     if (gw.contains("use_shared_memory")) cfg.use_shared_memory = gw["use_shared_memory"].get<bool>();
+    if (gw.contains("enable_zmq_side_channel")) {
+        cfg.enable_zmq_side_channel = gw["enable_zmq_side_channel"].get<bool>();
+    }
+    if (gw.contains("zmq_connect_retries")) {
+        cfg.zmq_connect_retries = gw["zmq_connect_retries"].get<int>();
+    }
+    if (gw.contains("zmq_connect_retry_interval_ms")) {
+        cfg.zmq_connect_retry_interval_ms = gw["zmq_connect_retry_interval_ms"].get<int>();
+    }
+    if (cfg.zmq_connect_retries < 1) {
+        throw std::runtime_error("Config invalid zmq_connect_retries: must be >= 1");
+    }
+    if (cfg.zmq_connect_retry_interval_ms < 0) {
+        throw std::runtime_error("Config invalid zmq_connect_retry_interval_ms: must be >= 0");
+    }
     if (gw.contains("pre_resolved_instruments")) {
         cfg.pre_resolved_instruments = gw["pre_resolved_instruments"].get<std::vector<std::string>>();
     }

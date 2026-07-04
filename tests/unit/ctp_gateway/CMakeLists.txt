@@ -11,6 +11,22 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     if(MSVC)
         add_compile_options(/utf-8)
     endif()
+    # 独立构建时按功能×平台分发到 build/unit_tests/{win,linux}
+    if(WIN32)
+        set(TYCHE_PLATFORM "win")
+    else()
+        set(TYCHE_PLATFORM "linux")
+    endif()
+    set(TYCHE_UNIT_TEST_DIR "${TYCHE_ROOT}/build/unit_tests/${TYCHE_PLATFORM}")
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${TYCHE_UNIT_TEST_DIR})
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${TYCHE_UNIT_TEST_DIR})
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${TYCHE_UNIT_TEST_DIR})
+    foreach(OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES})
+        string(TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG_UPPER)
+        set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG_UPPER} ${TYCHE_UNIT_TEST_DIR})
+        set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${OUTPUTCONFIG_UPPER} ${TYCHE_UNIT_TEST_DIR})
+        set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG_UPPER} ${TYCHE_UNIT_TEST_DIR})
+    endforeach()
 endif()
 
 if(NOT DEFINED TYCHE_ROOT)
@@ -23,6 +39,11 @@ if(NOT DEFINED THIRD_PARTY_DIR)
 endif()
 
 set(CTP_GATEWAY_DIR "${TYCHE_ROOT}/src/modules/ctp_gateway_cpp")
+
+if(NOT TARGET tyche_module)
+    add_subdirectory("${TYCHE_ROOT}/src/tyche/cpp/module"
+                     "${CMAKE_BINARY_DIR}/tyche_module")
+endif()
 
 # CTP SDK 头文件目录（如果父作用域未定义，使用默认值）
 if(NOT DEFINED CTP_SDK_DIR)
@@ -58,6 +79,8 @@ if(CTP_GATEWAY_TEST_SOURCES)
         ${GATEWAY_SOURCES}
     )
 
+    target_compile_definitions(ctp_gateway_tests PRIVATE MSGPACK_NO_BOOST)
+
     target_include_directories(ctp_gateway_tests PRIVATE
         "${CTP_GATEWAY_DIR}/src"
         "${TYCHE_ROOT}/src"
@@ -78,5 +101,5 @@ if(CTP_GATEWAY_TEST_SOURCES)
     endif()
 
     include(GoogleTest)
-    gtest_discover_tests(ctp_gateway_tests)
+    gtest_discover_tests(ctp_gateway_tests DISCOVERY_MODE POST_BUILD)
 endif()
