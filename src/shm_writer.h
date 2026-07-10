@@ -14,9 +14,9 @@
 
 #include <msgpack.hpp>
 
-#include "tyche/cpp/engine/shared_memory_queue.h"
-#include "tyche/cpp/message.h"
-#include "tyche/cpp/types.h"
+#include "engine/shared_memory_queue.h"
+#include "tyche/message.h"
+#include "tyche/types.h"
 #include "quote_tick.h"
 
 // Serialize a tyche::Payload into msgpack bytes (map format).

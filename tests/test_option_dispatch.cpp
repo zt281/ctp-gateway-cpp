@@ -9,8 +9,8 @@
 #include <vector>
 
 #include "quote_tick.h"
-#include "tyche/cpp/engine/ring_buffer.h"
-#include "tyche/cpp/types.h"
+#include "engine/ring_buffer.h"
+#include "tyche/types.h"
 
 // Minimal tick_to_payload for testing — mirrors the conversion the gateway will use.
 static tyche::Payload tick_to_payload(const QuoteTick& tick) {

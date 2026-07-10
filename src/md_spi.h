@@ -2,7 +2,7 @@
 #include "config.h"
 #include "ThostFtdcMdApi.h"
 #include "quote_tick.h"
-#include "tyche/cpp/types.h"
+#include "tyche/types.h"
 #include <atomic>
 #include <chrono>
 #include <functional>

@@ -2,8 +2,8 @@
 #include "config.h"
 #include "md_spi.h"
 #include "td_spi.h"
-#include "tyche/cpp/module.h"
-#include "tyche/cpp/engine/ring_buffer.h"
+#include "tyche/module.h"
+#include "engine/ring_buffer.h"
 #include "quote_tick.h"
 #include "quote_validator.h"
 #include "dll_handle.h"
@@ -16,7 +16,7 @@
 #include <string>
 #include <thread>
 #include <unordered_set>
-#include "tyche/cpp/engine/shared_memory_queue.h"
+#include "engine/shared_memory_queue.h"
 
 // CtpGateway — C++ TycheModule，封装 CTP 行情/交易 API。
 //

@@ -8,8 +8,8 @@
 //   tyche_module_run()  → start gateway, block until stop
 //   tyche_module_stop() → signal shutdown
 
-#include "tyche/cpp/engine/module_interface.h"
-#include "tyche/cpp/engine/shared_memory_queue.h"
+#include "engine/module_interface.h"
+#include "engine/shared_memory_queue.h"
 #include "ctp_gateway.h"
 #include "config.h"
 #include "gateway_log.h"
